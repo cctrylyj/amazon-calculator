@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>亚马逊产品价格计算器 (USD)</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; font-family:'Segoe UI',Arial,sans-serif; }
+  body { background:#f0f2f5; padding:20px; color:#232f3e; }
+  .container { max-width:1100px; margin:0 auto; }
+  h1 { text-align:center; margin-bottom:8px; color:#ff9900; }
+  .subtitle { text-align:center; color:#666; margin-bottom:24px; font-size:14px; }
+  /* JS状态检测条：默认显示警告，脚本运行后隐藏 */
+  #jsCheck { background:#e74c3c; color:#fff; text-align:center; padding:12px;
+             border-radius:8px; margin-bottom:16px; font-size:14px; line-height:1.8; }
+  .card { background:#fff; border-radius:10px; padding:24px; margin-bottom:20px;
+          box-shadow:0 2px 8px rgba(0,0,0,.08); }
+  .card h2 { font-size:18px; margin-bottom:16px; padding-bottom:10px;
+             border-bottom:2px solid #ff9900; }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:20px; }
+  @media (max-width:800px){ .grid { grid-template-columns:1fr; } }
+  label { display:block; font-size:13px; color:#555; margin-bottom:4px; }
+  input, select { width:100%; padding:10px; border:1px solid #ddd; border-radius:6px;
+                  font-size:14px; margin-bottom:14px; }
+  input:focus, select:focus { outline:none; border-color:#ff9900; }
+  .unit { color:#999; font-size:12px; }
+  .row { display:flex; gap:12px; }
+  .row > div { flex:1; }
+  button { width:100%; padding:14px; background:#ff9900; color:#fff; border:none;
+           border-radius:8px; font-size:16px; font-weight:bold; cursor:pointer; }
+  button:hover { background:#e88b00; }
+  .freight-panel { background:linear-gradient(135deg,#232f3e,#37475a); color:#fff; }
+  .freight-panel h2 { color:#ff9900; border-color:#ff9900; }
+  .freight-panel label { color:#b0bec5; }
+  .freight-panel input, .freight-panel select { background:#2c3a49; color:#fff;
+           border-color:#4a5a6a; }
+  .rate-info { font-size:12px; color:#8a97a8; margin-top:10px; line-height:1.7; }
+  .freight-output { background:#1a2530; border-radius:8px; padding:14px; margin-top:10px;
+                    font-size:13px; line-height:1.9; }
+  .freight-output b { color:#2ecc71; font-size:16px; }
+  .btn-apply { background:#2ecc71; padding:10px; font-size:13px; margin-top:10px; }
+  .btn-apply:hover { background:#27ae60; }
+  .result { background:#232f3e; color:#fff; }
+  .result h2 { color:#ff9900; border-color:#ff9900; }
+  .result-row { display:flex; justify-content:space-between; padding:10px 0;
+                border-bottom:1px dashed #37475a; font-size:14px; }
+  .result-row.total { font-size:18px; font-weight:bold; color:#ff9900; border-bottom:none; }
+  .green { color:#2ecc71; }
+  .note { font-size:12px; color:#8a97a8; margin-top:12px; line-height:1.6; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>🛒 亚马逊产品价格计算器</h1>
+  <p class="subtitle">单位：美元（USD） · FBA / FBM 分开计算 · 盐田港→美国运费自动估算</p>
+
+  <!-- JS 运行检测条：脚本运行后会自动隐藏 -->
+  <div id="jsCheck">
+    ⚠️ <b>当前环境屏蔽了页面脚本（JavaScript），所有交互功能不可用。</b><br>
+    请将此文件<b>另存为 .html 后，用 Chrome / Edge 浏览器直接打开</b>，即可正常使用全部功能。
+  </div>
+
+  <!-- 运费自动估算 -->
+  <div class="card freight-panel">
+    <h2>🚢 头程运费估算（深圳盐田港 → 美国）</h2>
+    <div class="row">
+      <div>
+        <label>本批货物总重量 (kg)</label>
+        <input type="number" id="batchWeight" step="0.01" min="0" value="100"
+               onchange="estimateFreight()" oninput="estimateFreight()">
+      </div>
+      <div>
+        <label>本批货物件数（件）</label>
+        <input type="number" id="batchQty" step="1" min="1" value="200"
+               onchange="estimateFreight()" oninput="estimateFreight()">
+      </div>
+      <div>
+        <label>运输方式</label>
+        <select id="shipMethod" onchange="estimateFreight()">
+          <option value="sea_slow">海运普船 (普柜 25-35天)</option>
+          <option value="sea_fast" selected>海运快船 (美森正班 12-18天)</option>
+          <option value="air">空派 (8-12天)</option>
+          <option value="express">国际快递 (DHL/UPS 5-7天)</option>
+        </select>
+      </div>
+      <div>
+        <label>目的仓</label>
+        <select id="destination" onchange="estimateFreight()">
+          <option value="west" selected>美西 (ONT8/LGB8等)</option>
+          <option value="east">美东 (ABE8/TEB9等)</option>
+        </select>
+      </div>
+    </div>
+    <!-- ★ 默认估算结果直接写死在HTML里：即使JS被禁也有参考价值 ★ -->
+    <div class="freight-output" id="freightOutput">
+      海运快船(美森) · 美西仓 · 单价 <b>$1.8/kg</b><br>
+      单件重量：0.500 kg ｜ 计费重量：100kg<br>
+      整批运费：$180.00 ÷ 200件 = 单件分摊 <b>$0.90</b><br>
+      <span style="color:#8a97a8;font-size:12px;">（以上为默认参数的预估值，修改上方输入后需脚本运行才能重新计算）</span>
+    </div>
+    <button class="btn-apply" onclick="applyFreight()">✅ 应用为头程运费</button>
+    <button class="btn-apply" style="background:#4a5a6a" onclick="editRates()">⚙️ 修改费率表（存入本地）</button>
+    <p class="rate-info" id="rateInfo">📊 费率来源：内置参考费率（2024-Q3）<br>💡 海运费旺季(8-10月)可能上涨30%~80%，建议定期向货代询价。</p>
+  </div>
+
+  <!-- 基础信息 -->
+  <div class="card">
+    <h2>① 基础成本（FBA / FBM 共用）</h2>
+    <div class="row">
+      <div>
+        <label>产品制造成本 ($) *</label>
+        <input type="number" id="cost" step="0.01" min="0" placeholder="例如：5.00">
+      </div>
+      <div>
+        <label>头程运费/件 ($) <span class="unit">← 自动估算，可手动修改</span></label>
+        <input type="number" id="shippingIn" step="0.01" min="0" value="0.90"
+               oninput="this.dataset.manual='1'">
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label>平台佣金比例 (%) <span class="unit">默认8%~15%</span></label>
+        <input type="number" id="referralFee" step="0.1" min="0" value="15">
+      </div>
+      <div>
+        <label>其他费用（推广/退货损耗等）($)</label>
+        <input type="number" id="other" step="0.01" min="0" value="0">
+      </div>
+    </div>
+  </div>
+
+  <!-- FBA / FBM 参数 -->
+  <div class="grid">
+    <div class="card">
+      <h2>② FBA 参数</h2>
+      <label>产品尺寸分段</label>
+      <select id="fbaSize" onchange="document.getElementById('customFbaWrap').style.display=(this.value==='custom'?'block':'none')">
+        <option value="2.5">小号标准尺寸 ($2.50)</option>
+        <option value="3" selected>大号标准尺寸（≤1磅）($3.00)</option>
+        <option value="4.5">大号标准尺寸（1-3磅）($4.50)</option>
+        <option value="7">大号标准尺寸（3-20磅）($7.00)</option>
+        <option value="custom">自定义配送费</option>
+      </select>
+      <div id="customFbaWrap" style="display:none">
+        <label>自定义 FBA 配送费 ($)</label>
+        <input type="number" id="customFba" step="0.01" min="0" value="3">
+      </div>
+      <label>月度仓储费 ($)</label>
+      <input type="number" id="storageFee" step="0.01" min="0" value="0.5">
+    </div>
+    <div class="card">
+      <h2>② FBM 参数</h2>
+      <label>自发货运费（美国境内尾程）($)</label>
+      <input type="number" id="fbmShipping" step="0.01" min="0" value="5">
+      <label>包装/人工成本 ($)</label>
+      <input type="number" id="fbmPacking" step="0.01" min="0" value="1">
+    </div>
+  </div>
+
+  <!-- 目标利润 -->
+  <div class="card">
+    <h2>③ 目标利润率</h2>
+    <div class="row">
+      <div>
+        <label>建议售价利润率 (%) <span class="unit">利润 ÷ 售价，一般 20%~40%</span></label>
+        <input type="number" id="margin" step="1" min="1" max="90" value="30">
+      </div>
+      <div style="display:flex; align-items:flex-end;">
+        <button onclick="calc()">🧮 开始计算</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 结果 -->
+  <div class="grid">
+    <div class="card result" id="fbaResult" style="display:none">
+      <h2>FBA 计算结果</h2>
+      <div class="result-row"><span>到仓成本（制造+头程）</span><span id="fbaLanded"></span></div>
+      <div class="result-row"><span>FBA配送费 + 仓储费</span><span id="fbaFee"></span></div>
+      <div class="result-row"><span>平台佣金 + 其他</span><span id="fbaExtra"></span></div>
+      <div class="result-row"><span>总成本</span><span id="fbaTotal"></span></div>
+      <div class="result-row total"><span>推荐上架价格</span><span id="fbaPrice"></span></div>
+      <div class="result-row"><span>预计单件利润</span><span class="green" id="fbaProfit"></span></div>
+    </div>
+    <div class="card result" id="fbmResult" style="display:none">
+      <h2>FBM 计算结果</h2>
+      <div class="result-row"><span>到仓成本（制造+头程）</span><span id="fbmLanded"></span></div>
+      <div class="result-row"><span>自发货运费 + 包装</span><span id="fbmFee"></span></div>
+      <div class="result-row"><span>平台佣金 + 其他</span><span id="fbmExtra"></span></div>
+      <div class="result-row"><span>总成本</span><span id="fbmTotal"></span></div>
+      <div class="result-row total"><span>推荐上架价格</span><span id="fbmPrice"></span></div>
+      <div class="result-row"><span>预计单件利润</span><span class="green" id="fbmProfit"></span></div>
+      <p class="note">⚠ FBM 若做"免邮"，运费已含在成本里。</p>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ★ 第一句：隐藏JS检测条。若你看到顶部红色警告，说明本脚本未执行 ★ */
+document.getElementById('jsCheck').style.display = 'none';
+
+/* ================= 内置费率表（盐田→美国，USD/kg）================= */
+var DEFAULT_RATES = {
+  date: '2024-Q3',
+  sea_slow:  { west: 1.1, east: 1.6,  minKg: 12,  name: '海运普船' },
+  sea_fast:  { west: 1.8, east: 2.4,  minKg: 12,  name: '海运快船(美森)' },
+  air:       { west: 4.5, east: 5.2,  minKg: 0.5, name: '空派' },
+  express:   { west: 7.5, east: 8.5,  minKg: 0.5, name: '国际快递' }
+};
+
+var currentRates = null;
+var rateSource = '';
+
+function getSavedRates(){
+  try { return localStorage.getItem('freightRates'); } catch(e){ return null; }
+}
+function saveRates(){
+  try { localStorage.setItem('freightRates', JSON.stringify(currentRates)); } catch(e){}
+}
+function loadRates(){
+  var parsed = null;
+  try { parsed = JSON.parse(getSavedRates()); } catch(e){ parsed = null; }
+  if(parsed){
+    currentRates = parsed;
+    rateSource = '本地保存的自定义费率（' + parsed.date + '）';
+  }else{
+    currentRates = JSON.parse(JSON.stringify(DEFAULT_RATES));
+    rateSource = '内置参考费率（' + currentRates.date + '）';
+  }
+  estimateFreight();
+}
+
+function v(id){ return parseFloat(document.getElementById(id).value) || 0; }
+function money(n){ return '
+
+## 本版本的5重防护
+
+1. **🔴 JS检测条** — 脚本一旦被屏蔽，顶部红色警告直接告诉你原因和解决办法
+2. **静态兜底内容** — 运费估算框里**预先写死了默认估算结果**（不再是"正在获取"），即使脚本完全不跑，你也能看到参考值
+3. **removeAsync/load依赖** — 初始化的 `loadRates()` 在脚本解析到时就**立即同步执行**，不依赖任何事件
+4. **事件改写到HTML标签内**（`onchange=` 等），兼容性最大化
+5. **全面改回 ES5 语法**（`var`、字符串拼接），兼容极老/受限的浏览器内核
+
+如果另存为 `.html` 用浏览器打开后仍异常，请 **F12 → Console 截图红色报错**发给我，那就是真 bug，我立刻修。 + n.toFixed(2); }
+
+function estimateFreight(){
+  if(!currentRates) return;
+  var totalW = v('batchWeight');
+  var qty = Math.max(1, v('batchQty'));
+  var method = document.getElementById('shipMethod').value;
+  var dest = document.getElementById('destination').value;
+  var r = currentRates[method];
+  if(!r) return;
+
+  var ratePerKg = r[dest];
+  var effWeight = Math.max(totalW, r.minKg);
+  var batchTotal = effWeight * ratePerKg;
+  var perItem = batchTotal / qty;
+  var singleKg = totalW / qty;
+
+  var html;
+  if(totalW > 0){
+    html = r.name + ' · ' + (dest==='west'?'美西':'美东') + '仓 · 单价 <b>
+
+## 本版本的5重防护
+
+1. **🔴 JS检测条** — 脚本一旦被屏蔽，顶部红色警告直接告诉你原因和解决办法
+2. **静态兜底内容** — 运费估算框里**预先写死了默认估算结果**（不再是"正在获取"），即使脚本完全不跑，你也能看到参考值
+3. **removeAsync/load依赖** — 初始化的 `loadRates()` 在脚本解析到时就**立即同步执行**，不依赖任何事件
+4. **事件改写到HTML标签内**（`onchange=` 等），兼容性最大化
+5. **全面改回 ES5 语法**（`var`、字符串拼接），兼容极老/受限的浏览器内核
+
+如果另存为 `.html` 用浏览器打开后仍异常，请 **F12 → Console 截图红色报错**发给我，那就是真 bug，我立刻修。 + ratePerKg + '/kg</b><br>'
+      + '单件重量：' + singleKg.toFixed(3) + ' kg ｜ 计费重量：' + effWeight + 'kg'
+      + (effWeight > totalW ? '（未达最小起运量' + r.minKg + 'kg，按起运量计）' : '') + '<br>'
+      + '整批运费：
+
+## 本版本的5重防护
+
+1. **🔴 JS检测条** — 脚本一旦被屏蔽，顶部红色警告直接告诉你原因和解决办法
+2. **静态兜底内容** — 运费估算框里**预先写死了默认估算结果**（不再是"正在获取"），即使脚本完全不跑，你也能看到参考值
+3. **removeAsync/load依赖** — 初始化的 `loadRates()` 在脚本解析到时就**立即同步执行**，不依赖任何事件
+4. **事件改写到HTML标签内**（`onchange=` 等），兼容性最大化
+5. **全面改回 ES5 语法**（`var`、字符串拼接），兼容极老/受限的浏览器内核
+
+如果另存为 `.html` 用浏览器打开后仍异常，请 **F12 → Console 截图红色报错**发给我，那就是真 bug，我立刻修。 + batchTotal.toFixed(2) + ' ÷ ' + qty + '件 = 单件分摊 <b>
+
+## 本版本的5重防护
+
+1. **🔴 JS检测条** — 脚本一旦被屏蔽，顶部红色警告直接告诉你原因和解决办法
+2. **静态兜底内容** — 运费估算框里**预先写死了默认估算结果**（不再是"正在获取"），即使脚本完全不跑，你也能看到参考值
+3. **removeAsync/load依赖** — 初始化的 `loadRates()` 在脚本解析到时就**立即同步执行**，不依赖任何事件
+4. **事件改写到HTML标签内**（`onchange=` 等），兼容性最大化
+5. **全面改回 ES5 语法**（`var`、字符串拼接），兼容极老/受限的浏览器内核
+
+如果另存为 `.html` 用浏览器打开后仍异常，请 **F12 → Console 截图红色报错**发给我，那就是真 bug，我立刻修。 + perItem.toFixed(2) + '</b>';
+  }else{
+    html = '请输入本批货物总重量';
+  }
+  document.getElementById('freightOutput').innerHTML = html;
+  document.getElementById('rateInfo').innerHTML = '📊 费率来源：' + rateSource
+    + '<br>💡 海运费旺季(8-10月)可能上涨30%~80%，建议定期向货代询价后点"修改费率表"。';
+
+  var sInput = document.getElementById('shippingIn');
+  if(!sInput.dataset.manual && totalW > 0){
+    sInput.value = perItem.toFixed(2);
+  }
+}
+
+function applyFreight(){
+  var sInput = document.getElementById('shippingIn');
+  sInput.dataset.manual = '1';
+  alert('✅ 已应用：
+
+## 本版本的5重防护
+
+1. **🔴 JS检测条** — 脚本一旦被屏蔽，顶部红色警告直接告诉你原因和解决办法
+2. **静态兜底内容** — 运费估算框里**预先写死了默认估算结果**（不再是"正在获取"），即使脚本完全不跑，你也能看到参考值
+3. **removeAsync/load依赖** — 初始化的 `loadRates()` 在脚本解析到时就**立即同步执行**，不依赖任何事件
+4. **事件改写到HTML标签内**（`onchange=` 等），兼容性最大化
+5. **全面改回 ES5 语法**（`var`、字符串拼接），兼容极老/受限的浏览器内核
+
+如果另存为 `.html` 用浏览器打开后仍异常，请 **F12 → Console 截图红色报错**发给我，那就是真 bug，我立刻修。 + sInput.value + '/件 作为头程运费');
+}
+
+function editRates(){
+  var m = document.getElementById('shipMethod').value;
+  var r = currentRates[m];
+  var west = prompt('设置 [' + r.name + '] 美西单价 $/kg：', r.west);
+  if(west === null) return;
+  var east = prompt('设置 [' + r.name + '] 美东单价 $/kg：', r.east);
+  if(east === null) return;
+  r.west = parseFloat(west) || r.west;
+  r.east = parseFloat(east) || r.east;
+  currentRates.date = '自定义 ' + new Date().toLocaleDateString();
+  saveRates();
+  rateSource = '本地保存的自定义费率（' + currentRates.date + '）';
+  estimateFreight();
+}
+
+function roundTo99(p){ return Math.floor(p) + 0.99; }
+
+function calc(){
+  var cost = v('cost');
+  if(cost <= 0){ alert('请输入产品制造成本！'); return; }
+  var referralRate = v('referralFee')/100, other = v('other'), margin = v('margin')/100;
+  if(margin + referralRate >= 0.98){ alert('利润率+佣金比例过高！'); return; }
+  var landed = cost + v('shippingIn');
+
+  // FBA
+  var fbaShip = document.getElementById('fbaSize').value === 'custom'
+                ? v('customFba') : parseFloat(document.getElementById('fbaSize').value);
+  var fbaFixed = landed + fbaShip + v('storageFee') + other;
+  var fbaPrice = roundTo99(fbaFixed/(1-referralRate-margin));
+  var fbaRef = fbaPrice*referralRate, fbaTotal = fbaFixed+fbaRef, fbaProfit = fbaPrice-fbaTotal;
+  document.getElementById('fbaLanded').textContent = money(landed);
+  document.getElementById('fbaFee').textContent = money(fbaShip+v('storageFee'));
+  document.getElementById('fbaExtra').textContent = money(fbaRef+other);
+  document.getElementById('fbaTotal').textContent = money(fbaTotal);
+  document.getElementById('fbaPrice').textContent = money(fbaPrice);
+  document.getElementById('fbaProfit').textContent = money(fbaProfit)+' ('+(fbaProfit/fbaPrice*100).toFixed(1)+'%)';
+  document.getElementById('fbaResult').style.display='block';
+
+  // FBM
+  var fbmFixed = landed + v('fbmShipping') + v('fbmPacking') + other;
+  var fbmPrice = roundTo99(fbmFixed/(1-referralRate-margin));
+  var fbmRef = fbmPrice*referralRate, fbmTotal = fbmFixed+fbmRef, fbmProfit = fbmPrice-fbmTotal;
+  document.getElementById('fbmLanded').textContent = money(landed);
+  document.getElementById('fbmFee').textContent = money(v('fbmShipping')+v('fbmPacking'));
+  document.getElementById('fbmExtra').textContent = money(fbmRef+other);
+  document.getElementById('fbmTotal').textContent = money(fbmTotal);
+  document.getElementById('fbmPrice').textContent = money(fbmPrice);
+  document.getElementById('fbmProfit').textContent = money(fbmProfit)+' ('+(fbmProfit/fbmPrice*100).toFixed(1)+'%)';
+  document.getElementById('fbmResult').style.display='block';
+  try{ document.getElementById('fbaResult').scrollIntoView({behavior:'smooth'}); }catch(e){}
+}
+
+/* ================= 立即初始化（不依赖任何事件） ================= */
+loadRates();
+</script>
+</body>
+</html>
