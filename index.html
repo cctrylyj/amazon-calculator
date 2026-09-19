@@ -7,7 +7,7 @@
 <style>
   * { margin:0; padding:0; box-sizing:border-box; font-family:'Segoe UI',Arial,sans-serif; }
   body { background:#f0f2f5; padding:20px; color:#232f3e; }
-  .container { max-width:1100px; margin:0 auto; }
+  .container { max-width:1100px; margin:0 auto; padding-bottom:40px; }
   h1 { text-align:center; margin-bottom:8px; color:#ff9900; }
   .subtitle { text-align:center; color:#666; margin-bottom:24px; font-size:14px; }
   .card { background:#fff; border-radius:10px; padding:24px; margin-bottom:20px;
@@ -50,6 +50,22 @@
   .note { font-size:12px; color:#8a97a8; margin-top:12px; line-height:1.6; }
   .err { background:#fce8e6; border:1px solid #e74c3c; color:#c0392b; border-radius:8px;
          padding:10px 14px; margin-bottom:14px; font-size:13px; display:none; }
+
+  /* 弹窗 */
+  .modal-mask { position:fixed; top:0; left:0; width:100%; height:100%;
+                background:rgba(0,0,0,.55); z-index:999;
+                display:none; align-items:center; justify-content:center; padding:16px; }
+  .modal { background:#fff; border-radius:12px; width:100%; max-width:520px;
+           padding:24px; box-shadow:0 10px 40px rgba(0,0,0,.3);
+           animation:popIn .2s ease; }
+  @keyframes popIn { from{ transform:scale(.92); opacity:0; } to{ transform:scale(1); opacity:1; } }
+  .modal h2 { font-size:18px; margin-bottom:6px; color:#232f3e;
+              padding-bottom:10px; border-bottom:2px solid #ff9900; }
+  .modal .tip { font-size:13px; color:#666; margin-bottom:14px; }
+
+  /* 结果刷新时的闪烁动画 */
+  .flash { animation:flashAnim .4s ease; }
+  @keyframes flashAnim { 0%{ background:#3a4a5a; } 100%{ background:transparent; } }
 </style>
 </head>
 <body>
@@ -90,7 +106,7 @@
     </div>
     <div class="freight-output" id="freightOutput"></div>
     <button class="btn-apply" onclick="applyFreight()">应用为头程运费</button>
-    <button class="btn-edit" onclick="editRates()">修改费率表（存入本地）</button>
+    <button class="btn-edit" onclick="editRates()">修改费率表（弹窗编辑，存入本地）</button>
     <div class="toast" id="toast"></div>
     <p class="rate-info" id="rateInfo"></p>
   </div>
@@ -101,22 +117,25 @@
     <div class="row">
       <div>
         <label>产品制造成本 ($) *</label>
-        <input type="number" id="cost" step="any" min="0" placeholder="例如 5.00">
+        <input type="number" id="cost" step="any" min="0" placeholder="例如 5.00"
+               oninput="autoCalc()">
       </div>
       <div>
         <label>头程运费/件 ($) <span class="unit">自动估算，可手动改</span></label>
         <input type="number" id="shippingIn" step="any" min="0" value="0.90"
-               oninput="this.dataset.manual=1">
+               oninput="this.dataset.manual=1; autoCalc();">
       </div>
     </div>
     <div class="row">
       <div>
         <label>平台佣金比例 (%) <span class="unit">一般 8%~15%</span></label>
-        <input type="number" id="referralFee" step="any" min="0" value="15">
+        <input type="number" id="referralFee" step="any" min="0" value="15"
+               oninput="autoCalc()">
       </div>
       <div>
         <label>其他费用（广告/退货损耗等）($)</label>
-        <input type="number" id="other" step="any" min="0" value="0">
+        <input type="number" id="other" step="any" min="0" value="0"
+               oninput="autoCalc()">
       </div>
     </div>
   </div>
@@ -127,7 +146,7 @@
       <h2>2. FBA 参数</h2>
       <label>产品尺寸分段</label>
       <select id="fbaSize"
-        onchange="document.getElementById('customFbaWrap').style.display=(this.value=='custom'?'block':'none')">
+        onchange="document.getElementById('customFbaWrap').style.display=(this.value=='custom'?'block':'none'); autoCalc();">
         <option value="2.5">小号标准尺寸 ($2.50)</option>
         <option value="3" selected>大号标准尺寸 ≤1磅 ($3.00)</option>
         <option value="4.5">大号标准尺寸 1-3磅 ($4.50)</option>
@@ -136,17 +155,21 @@
       </select>
       <div id="customFbaWrap" style="display:none">
         <label>自定义 FBA 配送费 ($)</label>
-        <input type="number" id="customFba" step="any" min="0" value="3">
+        <input type="number" id="customFba" step="any" min="0" value="3"
+               oninput="autoCalc()">
       </div>
       <label>月度仓储费 ($)</label>
-      <input type="number" id="storageFee" step="any" min="0" value="0.5">
+      <input type="number" id="storageFee" step="any" min="0" value="0.5"
+             oninput="autoCalc()">
     </div>
     <div class="card">
       <h2>2. FBM 参数</h2>
       <label>自发货运费（美国境内尾程）($)</label>
-      <input type="number" id="fbmShipping" step="any" min="0" value="5">
+      <input type="number" id="fbmShipping" step="any" min="0" value="5"
+             oninput="autoCalc()">
       <label>包装/人工成本 ($)</label>
-      <input type="number" id="fbmPacking" step="any" min="0" value="1">
+      <input type="number" id="fbmPacking" step="any" min="0" value="1"
+             oninput="autoCalc()">
     </div>
   </div>
 
@@ -157,7 +180,8 @@
     <div class="row">
       <div>
         <label>建议售价利润率 (%) <span class="unit">一般 20%~40%</span></label>
-        <input type="number" id="margin" step="1" min="1" max="90" value="30">
+        <input type="number" id="margin" step="1" min="1" max="90" value="30"
+               oninput="autoCalc()">
       </div>
       <div style="display:flex; align-items:flex-end;">
         <button onclick="calc()">开始计算</button>
@@ -187,25 +211,19 @@
       <p class="note">FBM 若做免邮，运费已含在成本里。</p>
     </div>
   </div>
+</div>
 
-  <!-- 费率编辑面板（页面内嵌，不依赖系统弹窗） -->
-  <div class="card" id="rateEditor" style="display:none; border:2px solid #ff9900;">
-    <h2>修改费率</h2>
-    <p style="font-size:13px; color:#666; margin-bottom:12px;" id="rateEditTitle"></p>
-    <div class="row">
-      <div>
-        <label>美西单价 ($/kg)</label>
-        <input type="number" id="editWest" step="0.01" min="0">
-      </div>
-      <div>
-        <label>美东单价 ($/kg)</label>
-        <input type="number" id="editEast" step="0.01" min="0">
-      </div>
-      <div>
-        <label>最小起运量 (kg)</label>
-        <input type="number" id="editMinKg" step="0.1" min="0">
-      </div>
-    </div>
+<!-- 费率编辑弹窗 -->
+<div class="modal-mask" id="rateEditor" onclick="if(event.target===this)closeRateEditor()">
+  <div class="modal">
+    <h2>⚙️ 修改费率</h2>
+    <p class="tip" id="rateEditTitle"></p>
+    <label>美西单价 ($/kg)</label>
+    <input type="number" id="editWest" step="0.01" min="0">
+    <label>美东单价 ($/kg)</label>
+    <input type="number" id="editEast" step="0.01" min="0">
+    <label>最小起运量 (kg)</label>
+    <input type="number" id="editMinKg" step="0.1" min="0">
     <div class="row">
       <div><button class="btn-apply" onclick="saveEditedRates()">保存并应用</button></div>
       <div><button style="background:#95a5a6" onclick="closeRateEditor()">取消</button></div>
@@ -224,14 +242,12 @@ var DEFAULT_RATES = {
 var currentRates = null;
 var rateSource = "";
 
-/* ---------- localStorage 容错 ---------- */
 function getSavedRates(){
   try { return localStorage.getItem("freightRates"); } catch(e){ return null; }
 }
 function saveRates(){
   try { localStorage.setItem("freightRates", JSON.stringify(currentRates)); } catch(e){}
 }
-
 function v(id){ return parseFloat(document.getElementById(id).value) || 0; }
 function money(n){ return "$" + n.toFixed(2); }
 
@@ -283,9 +299,11 @@ function estimateFreight(){
   if(!sInput.dataset.manual && totalW > 0){
     sInput.value = perItem.toFixed(2);
   }
+  /* 运费变了 → 联动重算结果 */
+  autoCalc();
 }
 
-/* ---------- 提示条（替代 alert，沙盒环境也能用） ---------- */
+/* ---------- 提示条 ---------- */
 function showToast(msg){
   var t = document.getElementById("toast");
   t.textContent = msg;
@@ -297,9 +315,10 @@ function applyFreight(){
   var sInput = document.getElementById("shippingIn");
   sInput.dataset.manual = 1;
   showToast("已应用头程运费 $" + sInput.value + "/件");
+  autoCalc();
 }
 
-/* ---------- 费率编辑1（页面内置面板，不用 prompt） ---------- */
+/* ---------- 费率编辑弹窗 ---------- */
 function editRates(){
   var m = document.getElementById("shipMethod").value;
   var r = currentRates[m];
@@ -308,10 +327,8 @@ function editRates(){
   document.getElementById("editWest").value = r.west;
   document.getElementById("editEast").value = r.east;
   document.getElementById("editMinKg").value = r.minKg;
-  document.getElementById("rateEditor").style.display = "block";
-  try { document.getElementById("rateEditor").scrollIntoView({behavior:"smooth"}); } catch(e){}
+  document.getElementById("rateEditor").style.display = "flex";
 }
-
 function saveEditedRates(){
   var m = document.getElementById("shipMethod").value;
   var r = currentRates[m];
@@ -321,13 +338,22 @@ function saveEditedRates(){
   currentRates.date = "自定义 " + new Date().toLocaleDateString();
   saveRates();
   rateSource = "本地保存的自定义费率（" + currentRates.date + "）";
-  estimateFreight();
-  document.getElementById("rateEditor").style.display = "none";
+  estimateFreight();   // 里面会自动 autoCalc()
+  closeRateEditor();
   showToast("费率已保存并重新估算");
 }
-
 function closeRateEditor(){
   document.getElementById("rateEditor").style.display = "none";
+}
+document.addEventListener("keydown", function(e){
+  if(e.key === "Escape"){ closeRateEditor(); }
+});
+
+/* ---------- 自动重算：只在结果已展示过 + 成本有效时静默执行 ---------- */
+function autoCalc(){
+  var shown = document.getElementById("fbaResult").style.display !== "none";
+  if(!shown){ return; }
+  calc(true);
 }
 
 /* ---------- 价格计算 ---------- */
@@ -339,14 +365,27 @@ function showErr(msg){
   e.style.display = "block";
 }
 
-function calc(){
+function flash(id){
+  var el = document.getElementById(id);
+  el.className = el.className.replace(/ ?flash/g, "");
+  void el.offsetWidth;           // 触发动画重放
+  el.className += " flash";
+}
+
+function calc(silent){
   document.getElementById("errBox").style.display = "none";
   var cost = v("cost");
-  if(cost <= 0){ showErr("请先输入产品制造成本"); return; }
+  if(cost <= 0){
+    if(!silent){ showErr("请先输入产品制造成本"); }
+    return;
+  }
   var referralRate = v("referralFee") / 100;
   var other = v("other");
   var margin = v("margin") / 100;
-  if(margin + referralRate >= 0.98){ showErr("利润率 + 佣金比例过高，无法计算合理售价"); return; }
+  if(margin + referralRate >= 0.98){
+    if(!silent){ showErr("利润率 + 佣金比例过高，无法计算合理售价"); }
+    return;
+  }
   var landed = cost + v("shippingIn");
 
   // FBA
@@ -380,7 +419,14 @@ function calc(){
   document.getElementById("fbmProfit").textContent =
     money(fbmProfit) + " (" + (fbmProfit / fbmPrice * 100).toFixed(1) + "%)";
   document.getElementById("fbmResult").style.display = "block";
-  try { document.getElementById("fbaResult").scrollIntoView({behavior:"smooth"}); } catch(e){}
+
+  // 自动重算时，关键数字闪烁提示，让你一眼看到变化
+  if(silent){
+    flash("fbaPrice"); flash("fbmPrice");
+    flash("fbaProfit"); flash("fbmProfit");
+  }else{
+    try { document.getElementById("fbaResult").scrollIntoView({behavior:"smooth"}); } catch(e){}
+  }
 }
 
 loadRates();
